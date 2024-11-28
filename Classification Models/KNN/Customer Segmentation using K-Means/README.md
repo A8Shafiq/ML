@@ -56,10 +56,18 @@ The dataset should have the following columns:
 Example Visuals
 
 Elbow Graph
+
+
 ![image](https://github.com/user-attachments/assets/b00cef3f-9650-4dcf-9cb1-8dd7a8dee0eb)
 
 Customer Groups
+
+
 ![image](https://github.com/user-attachments/assets/15287ed7-a0be-40b0-a154-82789755bb8d)
+
+
+
+![image](https://github.com/user-attachments/assets/f282359b-c7b0-43c3-ad8c-27b391938e8d)
 
 
 Author
