@@ -1,0 +1,30 @@
+# main.py``
+import sys
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QFont
+from widgit import BayesianCalculator
+
+def main():
+    """Main application entry point"""
+    # Create the Qt application
+    app = QApplication(sys.argv)
+    
+    # Set application-wide font
+    font = QFont()
+    font.setFamily("Segoe UI")
+    font.setPointSize(10)
+    app.setFont(font)
+    
+    try:
+        # Create and show the main window
+        calculator = BayesianCalculator()
+        calculator.show()
+        
+        # Execute the application
+        sys.exit(app.exec_())
+    except Exception as e:
+        print(f"Application error: {e}")
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
