@@ -1,0 +1,311 @@
+import sys
+import numpy as np
+from scipy.stats import beta
+import plotly.graph_objects as go
+import plotly.io as pio
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QMessageBox, QTableWidget,
+    QTableWidgetItem, QHeaderView, QSlider, QGridLayout
+)
+from PyQt6.QtCore import Qt
+# from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtWebEngineWidgets import QWebEngineView
+
+class BayesianApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Bayesian Calculator with Visualizations")
+        self.setGeometry(100, 100, 1200, 900)
+
+        # Create widgets
+        self.create_input_widgets()
+        self.create_scenario_table()
+        self.create_visualization()
+
+        # Layout
+        main_layout = QVBoxLayout()
+        
+        # Input section
+        input_group = QWidget()
+        input_layout = QGridLayout()
+        input_layout.addWidget(QLabel("Prior Probability P(H):"), 0, 0)
+        input_layout.addWidget(self.prior_input, 0, 1)
+        input_layout.addWidget(self.prior_slider, 0, 2)
+        input_layout.addWidget(QLabel("Likelihood P(D|H):"), 1, 0)
+        input_layout.addWidget(self.likelihood_input, 1, 1)
+        input_layout.addWidget(self.likelihood_slider, 1, 2)
+        input_layout.addWidget(QLabel("False Positive P(D|¬H):"), 2, 0)
+        input_layout.addWidget(self.false_positive_input, 2, 1)
+        input_layout.addWidget(self.false_positive_slider, 2, 2)
+        input_layout.addWidget(QLabel("Successes:"), 3, 0)
+        input_layout.addWidget(self.success_input, 3, 1)
+        input_layout.addWidget(QLabel("Trials:"), 4, 0)
+        input_layout.addWidget(self.trials_input, 4, 1)
+        input_layout.addWidget(self.calculate_btn, 5, 0, 1, 3)
+        input_group.setLayout(input_layout)
+        
+        main_layout.addWidget(input_group)
+        main_layout.addWidget(self.result_label)
+        
+        # Visualization and table
+        h_layout = QHBoxLayout()
+        h_layout.addWidget(self.plot_view, 70)
+        h_layout.addWidget(self.scenario_table, 30)
+        
+        vis_group = QWidget()
+        vis_group.setLayout(h_layout)
+        main_layout.addWidget(vis_group)
+
+        container = QWidget()
+        container.setLayout(main_layout)
+        self.setCentralWidget(container)
+
+        # Initial calculation
+        self.calculate_posterior()
+
+    def create_input_widgets(self):
+        """Create input widgets with sliders"""
+        self.prior_input = QLineEdit("0.01")
+        self.likelihood_input = QLineEdit("0.9")
+        self.false_positive_input = QLineEdit("0.05")
+        self.success_input = QLineEdit("5")
+        self.trials_input = QLineEdit("10")
+        
+        # Sliders
+        self.prior_slider = QSlider(Qt.Orientation.Horizontal)
+        self.likelihood_slider = QSlider(Qt.Orientation.Horizontal)
+        self.false_positive_slider = QSlider(Qt.Orientation.Horizontal)
+        
+        # Configure sliders
+        for slider in [self.prior_slider, self.likelihood_slider, self.false_positive_slider]:
+            slider.setRange(0, 100)
+            slider.setSingleStep(1)
+            slider.setTickInterval(10)
+            slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        
+        self.prior_slider.setValue(1)  # 0.01 * 100
+        self.likelihood_slider.setValue(90)  # 0.9 * 100
+        self.false_positive_slider.setValue(5)  # 0.05 * 100
+        
+        # Connect signals
+        self.prior_input.textChanged.connect(self.update_slider_from_text)
+        self.likelihood_input.textChanged.connect(self.update_slider_from_text)
+        self.false_positive_input.textChanged.connect(self.update_slider_from_text)
+        
+        self.prior_slider.valueChanged.connect(self.update_text_from_slider)
+        self.likelihood_slider.valueChanged.connect(self.update_text_from_slider)
+        self.false_positive_slider.valueChanged.connect(self.update_text_from_slider)
+        
+        self.calculate_btn = QPushButton("Calculate")
+        self.calculate_btn.clicked.connect(self.calculate_posterior)
+        
+        self.result_label = QLabel("Results will be shown here")
+        self.result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.result_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+
+    def create_scenario_table(self):
+        """Create table with common Bayesian scenarios"""
+        self.scenario_table = QTableWidget()
+        self.scenario_table.setColumnCount(3)
+        self.scenario_table.setHorizontalHeaderLabels(["Scenario", "Parameters", ""])
+        self.scenario_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.scenario_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.scenario_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        
+        # Common scenarios
+        scenarios = [
+            ("Medical Test", "P(H)=0.01, P(D|H)=0.9, P(D|¬H)=0.05, Successes=5, Trials=10"),
+            ("Spam Filter", "P(H)=0.5, P(D|H)=0.95, P(D|¬H)=0.05, Successes=95, Trials=100"),
+            ("Security System", "P(H)=0.001, P(D|H)=0.99, P(D|¬H)=0.01, Successes=1, Trials=1000"),
+            ("Drug Test", "P(H)=0.03, P(D|H)=0.97, P(D|¬H)=0.1, Successes=97, Trials=100"),
+            ("Pregnancy Test", "P(H)=0.2, P(D|H)=0.99, P(D|¬H)=0.02, Successes=99, Trials=100")
+        ]
+        
+        self.scenario_table.setRowCount(len(scenarios))
+        for row, (name, params) in enumerate(scenarios):
+            self.scenario_table.setItem(row, 0, QTableWidgetItem(name))
+            self.scenario_table.setItem(row, 1, QTableWidgetItem(params))
+            
+            btn = QPushButton("Load")
+            btn.clicked.connect(lambda _, r=row: self.load_scenario(r))
+            self.scenario_table.setCellWidget(row, 2, btn)
+
+    def create_visualization(self):
+        """Create Plotly-based visualization using QWebEngineView"""
+        self.plot_view = QWebEngineView()
+
+    def update_slider_from_text(self):
+        """Update slider position based on text input"""
+        sender = self.sender()
+        try:
+            value = float(sender.text())
+            if 0 <= value <= 1:
+                slider = {
+                    self.prior_input: self.prior_slider,
+                    self.likelihood_input: self.likelihood_slider,
+                    self.false_positive_input: self.false_positive_slider
+                }[sender]
+                slider.setValue(int(value * 100))
+        except ValueError:
+            pass
+
+    def update_text_from_slider(self):
+        """Update text input based on slider position"""
+        sender = self.sender()
+        value = sender.value() / 100
+        input_field = {
+            self.prior_slider: self.prior_input,
+            self.likelihood_slider: self.likelihood_input,
+            self.false_positive_slider: self.false_positive_input
+        }[sender]
+        input_field.setText(f"{value:.2f}")
+        self.calculate_posterior()
+
+    def load_scenario(self, row):
+        """Load scenario from table"""
+        params_text = self.scenario_table.item(row, 1).text()
+        params = {}
+        for part in params_text.split(","):
+            key_value = part.strip().split("=")
+            if len(key_value) == 2:
+                key, value = key_value
+                params[key.strip()] = value.strip()
+        
+        self.prior_input.setText(params.get("P(H)", "0.01"))
+        self.likelihood_input.setText(params.get("P(D|H)", "0.9"))
+        self.false_positive_input.setText(params.get("P(D|¬H)", "0.05"))
+        self.success_input.setText(params.get("Successes", "5"))
+        self.trials_input.setText(params.get("Trials", "10"))
+
+    def calculate_posterior(self):
+        try:
+            # Get inputs
+            prior = float(self.prior_input.text())
+            likelihood = float(self.likelihood_input.text())
+            false_positive = float(self.false_positive_input.text())
+            successes = int(self.success_input.text())
+            trials = int(self.trials_input.text())
+
+            # Validate input ranges
+            for value in [prior, likelihood, false_positive]:
+                if not 0 <= value <= 1:
+                    raise ValueError("Probabilities must be between 0 and 1.")
+            if successes < 0 or trials < 0 or successes > trials:
+                raise ValueError("Invalid trial data (successes must be ≤ trials).")
+
+            # Bayes' Theorem
+            numerator = likelihood * prior
+            denominator = numerator + false_positive * (1 - prior)
+            posterior = numerator / denominator if denominator != 0 else 0
+
+            # Show result
+            self.result_label.setText(
+                f"Prior: {prior:.4f} | "
+                f"Likelihood: {likelihood:.4f} | "
+                f"False Positive: {false_positive:.4f}\n"
+                f"Posterior Probability P(H|D): {posterior:.4f} "
+                f"({posterior*100:.1f}%)\n"
+                f"Successes: {successes} | Trials: {trials} | "
+                f"Observed Rate: {successes/trials:.2f}"
+            )
+
+            # Plot charts
+            self.plot_chart(prior, posterior, successes, trials)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Input Error", str(e))
+
+    def plot_chart(self, prior, posterior, successes, trials):
+        # Create a combined HTML with both charts
+        html_content = """
+        <html>
+            <head>
+                <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+                <style>
+                    .chart-container {
+                        width: 100%;
+                        margin: 10px 0;
+                    }
+                </style>
+            </head>
+            <body>
+                <div id='bar-chart' class='chart-container'></div>
+                <div id='beta-chart' class='chart-container'></div>
+                <script>
+        """
+        
+        # Bar chart JavaScript
+        html_content += f"""
+                    var barData = {{
+                        x: ['Prior', 'Posterior'],
+                        y: [{prior}, {posterior}],
+                        type: 'bar',
+                        marker: {{color: ['#1f77b4', '#2ca02c']}},
+                        text: ['{prior:.3f}', '{posterior:.3f}'],
+                        textposition: 'auto'
+                    }};
+                    
+                    var barLayout = {{
+                        title: 'Prior vs Posterior Probability Comparison',
+                        yaxis: {{range: [0, 1]}},
+                        height: 300,
+                        margin: {{t: 40, l: 20, r: 20, b: 40}}
+                    }};
+                    
+                    Plotly.newPlot('bar-chart', [barData], barLayout);
+        """
+        
+        # Beta distribution JavaScript if we have valid trial data
+        if trials > 0 and successes >= 0 and (trials - successes) >= 0:
+            failures = trials - successes
+            x = [i/100 for i in range(101)]
+            prior_beta = [beta.pdf(p, 1, 1) for p in x]
+            post_beta = [beta.pdf(p, 1 + successes, 1 + failures) for p in x]
+            
+            html_content += f"""
+                    var betaData = [
+                        {{
+                            x: {x},
+                            y: {prior_beta},
+                            name: 'Prior Beta(1,1)',
+                            line: {{color: 'blue'}}
+                        }},
+                        {{
+                            x: {x},
+                            y: {post_beta},
+                            name: 'Posterior Beta({1 + successes},{1 + failures})',
+                            line: {{color: 'green'}}
+                        }}
+                    ];
+                    
+                    var betaLayout = {{
+                        title: 'Beta Distribution: Prior vs Posterior',
+                        height: 300,
+                        xaxis: {{title: 'Probability'}},
+                        yaxis: {{title: 'Density'}},
+                        margin: {{t: 40, l: 20, r: 20, b: 40}}
+                    }};
+                    
+                    Plotly.newPlot('beta-chart', betaData, betaLayout);
+            """
+        
+        html_content += """
+                </script>
+            </body>
+        </html>
+        """
+        
+        self.plot_view.setHtml(html_content)
+
+
+if __name__ == '__main__':
+    # Required for PyQt6 + WebEngine on some systems
+    from PyQt6.QtCore import QCoreApplication
+    QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
+    
+    app = QApplication(sys.argv)
+    window = BayesianApp()
+    window.show()
+    sys.exit(app.exec())
