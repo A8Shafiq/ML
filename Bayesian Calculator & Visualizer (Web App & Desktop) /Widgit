@@ -1,0 +1,354 @@
+  import sys
+import numpy as np
+from scipy.stats import beta
+import plotly.graph_objects as go
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QMessageBox, QSlider,
+    QGroupBox, QFormLayout, QDoubleSpinBox, QSpinBox
+)
+from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtGui import QFont, QPalette, QColor
+
+
+class BayesianCalculator(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Bayesian Calculator Pro")
+        self.setGeometry(100, 100, 1200, 800)
+        self.setup_ui()
+        self.setup_styles()
+        self.calculate()
+
+    def setup_ui(self):
+        """Create all UI components"""
+        main_widget = QWidget()
+        main_layout = QHBoxLayout(main_widget)
+
+        # Left panel - Input controls
+        control_panel = QWidget()
+        control_panel.setMaximumWidth(400)
+        control_layout = QVBoxLayout(control_panel)
+
+        # Probability inputs
+        prob_group = QGroupBox("Probability Parameters")
+        prob_layout = QFormLayout()
+        
+        self.prior_input = self.create_spinbox(0.01, 0, 1, 0.01)
+        self.likelihood_input = self.create_spinbox(0.9, 0, 1, 0.01)
+        self.false_positive_input = self.create_spinbox(0.05, 0, 1, 0.01)
+        
+        prob_layout.addRow("Prior P(H):", self.prior_input)
+        prob_layout.addRow("Likelihood P(D|H):", self.likelihood_input)
+        prob_layout.addRow("False Positive P(D|¬H):", self.false_positive_input)
+        prob_group.setLayout(prob_layout)
+
+        # Trial data inputs
+        trial_group = QGroupBox("Experimental Data")
+        trial_layout = QFormLayout()
+        
+        self.success_input = QSpinBox()
+        self.success_input.setRange(0, 10000)
+        self.success_input.setValue(5)
+        
+        self.trials_input = QSpinBox()
+        self.trials_input.setRange(1, 10000)
+        self.trials_input.setValue(10)
+        
+        trial_layout.addRow("Successes:", self.success_input)
+        trial_layout.addRow("Total Trials:", self.trials_input)
+        trial_group.setLayout(trial_layout)
+
+        # Sliders for interactive adjustment
+        slider_group = QGroupBox("Interactive Adjustments")
+        slider_layout = QVBoxLayout()
+        
+        self.prior_slider = self.create_slider(1)
+        self.likelihood_slider = self.create_slider(90)
+        self.false_positive_slider = self.create_slider(5)
+        
+        slider_layout.addWidget(QLabel("Prior Probability:"))
+        slider_layout.addWidget(self.prior_slider)
+        slider_layout.addWidget(QLabel("Likelihood:"))
+        slider_layout.addWidget(self.likelihood_slider)
+        slider_layout.addWidget(QLabel("False Positive Rate:"))
+        slider_layout.addWidget(self.false_positive_slider)
+        slider_group.setLayout(slider_layout)
+
+        # Results display
+        result_group = QGroupBox("Results")
+        result_layout = QVBoxLayout()
+        
+        self.result_label = QLabel()
+        self.result_label.setAlignment(Qt.AlignCenter)
+        self.result_label.setWordWrap(True)
+        
+        result_layout.addWidget(self.result_label)
+        result_group.setLayout(result_layout)
+
+        # Assemble control panel
+        control_layout.addWidget(prob_group)
+        control_layout.addWidget(trial_group)
+        control_layout.addWidget(slider_group)
+        control_layout.addWidget(result_group)
+        control_layout.addStretch()
+
+        # Right panel - Visualizations
+        self.web_view = QWebEngineView()
+        self.web_view.setUrl(QUrl("about:blank"))
+
+        # Add to main layout
+        main_layout.addWidget(control_panel)
+        main_layout.addWidget(self.web_view)
+
+        self.setCentralWidget(main_widget)
+
+        # Connect signals
+        self.connect_signals()
+
+    def setup_styles(self):
+        """Set up modern styling"""
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #2d2d2d;
+            }
+            QGroupBox {
+                border: 1px solid #444;
+                border-radius: 5px;
+                margin-top: 10px;
+                padding-top: 15px;
+                color: #ddd;
+                font-weight: bold;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 3px;
+            }
+            QLabel {
+                color: #ddd;
+            }
+            QDoubleSpinBox, QSpinBox {
+                background-color: #333;
+                color: #fff;
+                border: 1px solid #555;
+                border-radius: 3px;
+                padding: 5px;
+            }
+            QSlider::groove:horizontal {
+                height: 8px;
+                background: #444;
+                border-radius: 4px;
+            }
+            QSlider::handle:horizontal {
+                width: 16px;
+                height: 16px;
+                background: #5a9bd5;
+                border-radius: 8px;
+            }
+            QPushButton {
+                background-color: #5a9bd5;
+                color: white;
+                border: none;
+                padding: 8px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #7ab4e0;
+            }
+        """)
+
+        # Set dark palette
+        palette = self.palette()
+        palette.setColor(QPalette.Window, QColor(45, 45, 45))
+        palette.setColor(QPalette.WindowText, QColor(221, 221, 221))
+        palette.setColor(QPalette.Base, QColor(51, 51, 51))
+        palette.setColor(QPalette.AlternateBase, QColor(66, 66, 66))
+        palette.setColor(QPalette.ToolTipBase, QColor(221, 221, 221))
+        palette.setColor(QPalette.ToolTipText, QColor(221, 221, 221))
+        palette.setColor(QPalette.Text, QColor(221, 221, 221))
+        palette.setColor(QPalette.Button, QColor(51, 51, 51))
+        palette.setColor(QPalette.ButtonText, QColor(221, 221, 221))
+        palette.setColor(QPalette.Highlight, QColor(90, 155, 213))
+        palette.setColor(QPalette.HighlightedText, Qt.black)
+        self.setPalette(palette)
+
+    def create_spinbox(self, value, min_val, max_val, step):
+        """Create a styled double spinbox"""
+        spinbox = QDoubleSpinBox()
+        spinbox.setRange(min_val, max_val)
+        spinbox.setValue(value)
+        spinbox.setSingleStep(step)
+        spinbox.setDecimals(4)
+        return spinbox
+
+    def create_slider(self, value):
+        """Create a styled slider"""
+        slider = QSlider(Qt.Horizontal)
+        slider.setRange(0, 100)
+        slider.setValue(value)
+        slider.setSingleStep(1)
+        slider.setTickInterval(10)
+        slider.setTickPosition(QSlider.TicksBelow)
+        return slider
+
+    def connect_signals(self):
+        """Connect all input signals"""
+        # SpinBox connections
+        self.prior_input.valueChanged.connect(self.update_slider_from_spin)
+        self.likelihood_input.valueChanged.connect(self.update_slider_from_spin)
+        self.false_positive_input.valueChanged.connect(self.update_slider_from_spin)
+        
+        # Slider connections
+        self.prior_slider.valueChanged.connect(self.update_spin_from_slider)
+        self.likelihood_slider.valueChanged.connect(self.update_spin_from_slider)
+        self.false_positive_slider.valueChanged.connect(self.update_spin_from_slider)
+        
+        # Trial data connections
+        self.success_input.valueChanged.connect(self.calculate)
+        self.trials_input.valueChanged.connect(self.calculate)
+
+    def update_slider_from_spin(self):
+        """Update slider when spinbox changes"""
+        sender = self.sender()
+        value = sender.value()
+        slider = {
+            self.prior_input: self.prior_slider,
+            self.likelihood_input: self.likelihood_slider,
+            self.false_positive_input: self.false_positive_slider
+        }[sender]
+        slider.setValue(int(value * 100))
+
+    def update_spin_from_slider(self):
+        """Update spinbox when slider changes"""
+        sender = self.sender()
+        value = sender.value() / 100
+        spinbox = {
+            self.prior_slider: self.prior_input,
+            self.likelihood_slider: self.likelihood_input,
+            self.false_positive_slider: self.false_positive_input
+        }[sender]
+        spinbox.setValue(value)
+
+    def calculate(self):
+        """Perform Bayesian calculation and update display"""
+        try:
+            # Get input values
+            prior = self.prior_input.value()
+            likelihood = self.likelihood_input.value()
+            false_positive = self.false_positive_input.value()
+            successes = self.success_input.value()
+            trials = self.trials_input.value()
+            failures = trials - successes
+
+            if successes < 0 or failures < 0:
+                raise ValueError("More successes than trials")
+
+            # Calculate posterior probability
+            numerator = likelihood * prior
+            denominator = numerator + false_positive * (1 - prior)
+            posterior = numerator / denominator if denominator != 0 else 0
+
+            # Update results label
+            self.result_label.setText(
+                f"<b>Bayesian Results:</b><br>"
+                f"Prior: {prior:.4f} | Likelihood: {likelihood:.4f} | "
+                f"False Positive: {false_positive:.4f}<br>"
+                f"<span style='color: #5a9bd5; font-size: 14pt;'>Posterior Probability: {posterior:.4f} ({posterior*100:.1f}%)</span><br>"
+                f"Experimental Data: {successes}/{trials} successes "
+                f"({successes/trials:.1%} observed rate)"
+            )
+
+            # Update visualizations
+            self.update_visualizations(prior, posterior, successes, failures)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Calculation Error", str(e))
+
+    def update_visualizations(self, prior, posterior, successes, failures):
+        """Generate interactive Plotly visualizations"""
+        # Create figure with subplots
+        fig = go.Figure()
+
+        # Add bar chart trace (top)
+        fig.add_trace(go.Bar(
+            x=['Prior', 'Posterior'],
+            y=[prior, posterior],
+            marker_color=['#5a9bd5', '#4caf50'],
+            text=[f'{prior:.3f}', f'{posterior:.3f}'],
+            textposition='auto',
+            name='Probability Comparison'
+        ))
+
+        # Add beta distribution traces if we have data
+        if successes >= 0 and failures >= 0:
+            x = np.linspace(0, 1, 100)
+            prior_beta = beta.pdf(x, 1, 1)  # Uniform prior
+            post_beta = beta.pdf(x, 1 + successes, 1 + failures)
+            
+            fig.add_trace(go.Scatter(
+                x=x, y=prior_beta,
+                mode='lines',
+                line=dict(color='#5a9bd5', width=2, dash='dot'),
+                name='Prior Beta(1,1)',
+                yaxis='y2'
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=x, y=post_beta,
+                mode='lines',
+                line=dict(color='#4caf50', width=2),
+                name=f'Posterior Beta({1+successes},{1+failures})',
+                yaxis='y2'
+            ))
+
+        # Update layout for dual-axis plot
+        fig.update_layout(
+            title='Bayesian Analysis Results',
+            height=600,
+            margin=dict(t=60, l=40, r=40, b=40),
+            plot_bgcolor='rgba(45,45,45,1)',
+            paper_bgcolor='rgba(45,45,45,1)',
+            font=dict(color='white'),
+            xaxis=dict(
+                title='Probability',
+                gridcolor='rgba(100,100,100,0.5)'
+            ),
+            yaxis=dict(
+                title='Probability Value',
+                range=[0, 1],
+                gridcolor='rgba(100,100,100,0.5)'
+            ),
+            yaxis2=dict(
+                title='Density',
+                overlaying='y',
+                side='right',
+                showgrid=False
+            ),
+            legend=dict(
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='right',
+                x=1
+            )
+        )
+
+        # Convert to HTML and display
+        html = fig.to_html(include_plotlyjs='cdn', full_html=False)
+        self.web_view.setHtml(html)
+
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    
+    # Set application font
+    font = QFont()
+    font.setFamily("Segoe UI")
+    font.setPointSize(10)
+    app.setFont(font)
+    
+    calculator = BayesianCalculator()
+    calculator.show()
+    sys.exit(app.exec_())
